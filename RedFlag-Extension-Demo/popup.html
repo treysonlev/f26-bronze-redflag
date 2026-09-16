@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RedFlag</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><span class="flag" aria-hidden="true">⚑</span><div><h1>RedFlag</h1><p>Misinformation alert demo</p></div></header>
+  <main>
+    <label class="toggle-row"><span><strong>Protection</strong><small>Scan supported webpages</small></span><input id="enabled" type="checkbox"><span class="switch" aria-hidden="true"></span></label>
+    <section class="status"><div id="status-icon">—</div><div><strong id="status-title">Checking this page…</strong><p id="status-copy">RedFlag is connecting to the current tab.</p></div></section>
+    <button id="scan" type="button">Scan this page now</button>
+    <p class="note">Demo screening only. Review sources before deciding whether a claim is true or false.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
