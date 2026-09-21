@@ -25,6 +25,22 @@
   let scanning = false;
   let observer;
 
+  async function analyzeWithBackend(claim) {
+    const response = await fetch("http://127.0.0.1:5000/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ claim })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend returned ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
   function getRule(text) {
     return [...EXACT_RULES, ...SIGNAL_RULES].find(rule => rule.pattern.test(text));
   }
@@ -46,7 +62,7 @@
     updateUI();
   }
 
-  function flagTextNode(node, rule) {
+  async function flagTextNode(node, rule) {
     const text = node.nodeValue;
     const match = text.match(rule.pattern);
     if (!match || match.index == null) return;
@@ -69,6 +85,11 @@
     node.replaceWith(fragment);
 
     findings.push({ claim: matched, label: rule.label, reason: rule.reason });
+    analyzeWithBackend(matched).then(result => {
+      console.log("RedFlag backend response:", result);
+    }).catch(error => {
+      console.error("RedFlag backend error:", error);
+    });
   }
 
   function scanPage() {
