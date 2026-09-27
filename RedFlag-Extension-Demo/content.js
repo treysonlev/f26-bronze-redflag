@@ -37,14 +37,14 @@
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
-    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-hightlight")) return false;
+    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-hightlight, .signalwarning-highlight")) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
     return Boolean(parent.offsetParent || parent.getClientRects().length);
   }
 
   function clearHighlights() {
-    document.querySelectorAll(".redflag-highlight, .biasstar-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
+    document.querySelectorAll(".redflag-highlight, .biasstar-highlight, .signalwarning-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
     document.body?.normalize();
     findings = [];
     updateUI();
