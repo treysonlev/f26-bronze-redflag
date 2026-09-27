@@ -12,11 +12,15 @@
 
   const SIGNAL_RULES = [
     { pattern: /doctors? (?:do not|don['’]t) want you to know/i, label: "Manipulative wording", reason: "This phrase discourages checking qualified medical sources and provides no evidence by itself." },
-    { pattern: /share (?:this )?before (?:it['’]s|it is|this gets) deleted/i, label: "Urgency tactic", reason: "Pressure to share immediately is a common signal that a claim should be verified first." },
+    { pattern: /share (?:this )?before (?:it['’]s|it is|this gets|it gets) deleted/i, label: "Urgency tactic", reason: "Pressure to share immediately is a common signal that a claim should be verified first." },
     { pattern: /(?:100%|completely) guaranteed/i, label: "Absolute claim", reason: "Absolute guarantees require unusually strong evidence. Check the original source and supporting data." },
     { pattern: /mainstream media (?:won['’]t|will not|doesn['’]t) tell you/i, label: "Conspiracy framing", reason: "This wording attacks possible sources without supplying evidence for the claim." },
     { pattern: /miracle (?:cure|treatment|solution)/i, label: "Extraordinary claim", reason: "Medical miracle claims need strong clinical evidence and confirmation from reliable health authorities." }
   ];
+
+  const BIAS_RULES = [
+    { pattern: /(?:artifical intelligence| ai |data center|llm)/i, label: "Controversial topic", reason: "LLMs (aslo referred to as Artifical Intelligence) is a very divisive topic with strong opinion on both sides." }
+  ]
 
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SELECT", "OPTION", "CODE", "PRE"]);
   let enabled = true;
@@ -26,21 +30,21 @@
   let observer;
 
   function getRule(text) {
-    return [...EXACT_RULES, ...SIGNAL_RULES].find(rule => rule.pattern.test(text));
+    return [...EXACT_RULES, ...SIGNAL_RULES, ...BIAS_RULES].find(rule => rule.pattern.test(text));
   }
 
   function eligible(node) {
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
-    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight")) return false;
+    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-hightlight")) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
     return Boolean(parent.offsetParent || parent.getClientRects().length);
   }
 
   function clearHighlights() {
-    document.querySelectorAll(".redflag-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
+    document.querySelectorAll(".redflag-highlight, .biasstar-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
     document.body?.normalize();
     findings = [];
     updateUI();
@@ -58,7 +62,14 @@
     if (before) fragment.append(document.createTextNode(before));
 
     const span = document.createElement("span");
-    span.className = "redflag-highlight";
+    
+
+    if (BIAS_RULES.includes(rule))
+      span.className = "biasstar-highlight"
+    if (EXACT_RULES.includes(rule))
+      span.className = "redflag-highlight";
+    if (SIGNAL_RULES.includes(rule))
+      span.className = "signalwarning-highlight"
     span.textContent = matched;
     span.title = `${rule.label}: ${rule.reason}`;
     const findingIndex = findings.length;
@@ -112,7 +123,7 @@
   function openPanel(index) {
     const panel = document.getElementById("redflag-panel");
     panel?.classList.add("rf-open");
-    if (Number.isInteger(index)) panel?.querySelectorAll(".rf-item")[index]?.scrollIntoView({ block: "nearest" });
+    if (Number.isInteger(index)) panel?.querySelectorAll(".rf-item, .bs-item, .sw-item")[index]?.scrollIntoView({ block: "nearest" });
   }
 
   function updateUI() {
@@ -126,7 +137,11 @@
       ? `${findings.length} claim${findings.length === 1 ? "" : "s"} may need verification on this page.`
       : "No matching warning signals found on this page.";
     panel.querySelector(".rf-list").innerHTML = findings.length
-      ? findings.map((item, index) => `<article class="rf-item" data-index="${index}"><div class="rf-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`).join("")
+      ? findings.map((item, index) => 
+      {
+        const rule = getRule(item.claim)
+        const itemClass =  EXACT_RULES.includes(rule) ? "rf" : BIAS_RULES.includes(rule) ? "bs" : SIGNAL_RULES.includes(rule) ? "sw" : "";
+      return `<article class="${itemClass}-item" data-index="${index}"><div class="${itemClass}-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`}).join("")
       : `<div class="rf-empty">RedFlag did not find any claims covered by the current demo rules.</div>`;
     chrome.runtime.sendMessage({ type: "REDFLAG_BADGE", count: findings.length }).catch(() => {});
   }
