@@ -1,4 +1,7 @@
 # Backend Setup for Demo
+0) Optional, only if you want the database:
+    * from the repo's docker folder run: 'cp .env.example .env' then 'docker compose up -d'. 
+    * The backend still runs w/o it, it just cannot save claims w/o it.
 1) Make sure you are in the backend directory
 2) Install Dependencies, run python -m pip install -r requirements.txt
 2b) If it says that pip is not recognized, set up a virtual environment or set the interpreter, I do not understand
