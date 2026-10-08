@@ -2,22 +2,6 @@
   if (window.__redflagLoaded) return;
   window.__redflagLoaded = true;
 
-  const EXACT_RULES = [
-    { pattern: /the earth is flat/i, label: "Known false claim", reason: "Modern observations, satellite data, and centuries of measurement show that Earth is an oblate spheroid." },
-    { pattern: /vaccines? (?:contain|have) microchips?/i, label: "Known false claim", reason: "Authorized vaccine ingredient lists do not include tracking microchips." },
-    { pattern: /5g (?:causes|created|spreads?) (?:covid|coronavirus)/i, label: "Known false claim", reason: "Radio waves cannot create or transmit a biological virus." },
-    { pattern: /(?:drink|drinking) bleach (?:cures?|prevents?|treats?)/i, label: "Dangerous false claim", reason: "Swallowing bleach is poisonous and is not a medical treatment." },
-    { pattern: /the moon landing was (?:fake|faked|staged)/i, label: "Known false claim", reason: "Independent tracking, returned lunar material, imagery, and later observations corroborate the Apollo landings." }
-  ];
-
-  const SIGNAL_RULES = [
-    { pattern: /doctors? (?:do not|don['’]t) want you to know/i, label: "Manipulative wording", reason: "This phrase discourages checking qualified medical sources and provides no evidence by itself." },
-    { pattern: /share (?:this )?before (?:it['’]s|it is|this gets) deleted/i, label: "Urgency tactic", reason: "Pressure to share immediately is a common signal that a claim should be verified first." },
-    { pattern: /(?:100%|completely) guaranteed/i, label: "Absolute claim", reason: "Absolute guarantees require unusually strong evidence. Check the original source and supporting data." },
-    { pattern: /mainstream media (?:won['’]t|will not|doesn['’]t) tell you/i, label: "Conspiracy framing", reason: "This wording attacks possible sources without supplying evidence for the claim." },
-    { pattern: /miracle (?:cure|treatment|solution)/i, label: "Extraordinary claim", reason: "Medical miracle claims need strong clinical evidence and confirmation from reliable health authorities." }
-  ];
-
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SELECT", "OPTION", "CODE", "PRE"]);
   let enabled = true;
   let findings = [];
@@ -25,13 +9,13 @@
   let scanning = false;
   let observer;
 
-  async function analyzeWithBackend(claim) {
+  async function analyze(text) {
     const response = await fetch("http://127.0.0.1:5000/analyze", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ claim })
+      body: JSON.stringify({ text })
     });
 
     if (!response.ok) {
@@ -41,30 +25,26 @@
     return await response.json();
   }
 
-  function getRule(text) {
-    return [...EXACT_RULES, ...SIGNAL_RULES].find(rule => rule.pattern.test(text));
-  }
-
   function eligible(node) {
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
-    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight")) return false;
+    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-hightlight, .signalwarning-highlight")) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
     return Boolean(parent.offsetParent || parent.getClientRects().length);
   }
 
   function clearHighlights() {
-    document.querySelectorAll(".redflag-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
+    document.querySelectorAll(".redflag-highlight, .biasstar-highlight, .signalwarning-highlight").forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
     document.body?.normalize();
     findings = [];
     updateUI();
   }
 
-  async function flagTextNode(node, rule) {
+  function flagTextNode(node, rule) {
     const text = node.nodeValue;
-    const match = text.match(rule.pattern);
+    const match = text.match(new RegExp(rule.pattern, "i"));
     if (!match || match.index == null) return;
 
     const before = text.slice(0, match.index);
@@ -74,7 +54,14 @@
     if (before) fragment.append(document.createTextNode(before));
 
     const span = document.createElement("span");
-    span.className = "redflag-highlight";
+    
+
+    if (rule.flagtype == "biasstar")
+      span.className = "biasstar-highlight"
+    if (rule.flagtype == "redflag")
+      span.className = "redflag-highlight";
+    if (rule.flagtype == "signal")
+      span.className = "signalwarning-highlight"
     span.textContent = matched;
     span.title = `${rule.label}: ${rule.reason}`;
     const findingIndex = findings.length;
@@ -84,15 +71,10 @@
     if (after) fragment.append(document.createTextNode(after));
     node.replaceWith(fragment);
 
-    findings.push({ claim: matched, label: rule.label, reason: rule.reason });
-    analyzeWithBackend(matched).then(result => {
-      console.log("RedFlag backend response:", result);
-    }).catch(error => {
-      console.error("RedFlag backend error:", error);
-    });
+    findings.push({ claim: matched, label: rule.label, reason: rule.reason, flagtype: rule.flagtype });
   }
 
-  function scanPage() {
+  async function scanPage() {
     if (!enabled || !document.body || scanning) return;
     scanning = true;
     observer?.disconnect();
@@ -101,8 +83,8 @@
     const nodes = [];
     while (walker.nextNode()) if (eligible(walker.currentNode)) nodes.push(walker.currentNode);
     for (const node of nodes.slice(0, 5000)) {
-      const rule = getRule(node.nodeValue);
-      if (rule) flagTextNode(node, rule);
+      const rule = await analyze(node.nodeValue);
+      if (rule.flagged) flagTextNode(node, rule);
     }
     updateUI();
     observer?.observe(document.documentElement, { childList: true, subtree: true });
@@ -133,7 +115,7 @@
   function openPanel(index) {
     const panel = document.getElementById("redflag-panel");
     panel?.classList.add("rf-open");
-    if (Number.isInteger(index)) panel?.querySelectorAll(".rf-item")[index]?.scrollIntoView({ block: "nearest" });
+    if (Number.isInteger(index)) panel?.querySelectorAll(".rf-item, .bs-item, .sw-item")[index]?.scrollIntoView({ block: "nearest" });
   }
 
   function updateUI() {
@@ -147,7 +129,10 @@
       ? `${findings.length} claim${findings.length === 1 ? "" : "s"} may need verification on this page.`
       : "No matching warning signals found on this page.";
     panel.querySelector(".rf-list").innerHTML = findings.length
-      ? findings.map((item, index) => `<article class="rf-item" data-index="${index}"><div class="rf-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`).join("")
+      ? findings.map((item, index) => 
+      {
+        const itemClass = item.flagtype == "redflag" ? "rf" : item.flagtype == "biasstar" ? "bs" : item.flagtype == "signal" ? "sw" : "";
+      return `<article class="${itemClass}-item" data-index="${index}"><div class="${itemClass}-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`}).join("")
       : `<div class="rf-empty">RedFlag did not find any claims covered by the current demo rules.</div>`;
     chrome.runtime.sendMessage({ type: "REDFLAG_BADGE", count: findings.length }).catch(() => {});
   }
