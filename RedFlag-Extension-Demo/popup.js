@@ -15,10 +15,12 @@ async function messageTab(message) {
   return chrome.tabs.sendMessage(tab.id, message);
 }
 
-function showCount(count) {
+function showCount(count, status = "") {
   icon.textContent = String(count);
   title.textContent = count ? `${count} flag${count === 1 ? "" : "s"} found` : "No flags found";
-  copy.textContent = count ? "Open the floating RedFlag button on the page for details." : "No claims matched the current demo rules.";
+  copy.textContent = status.startsWith("Analysis failed:") ? status
+    : count ? "Open the floating RedFlag button to view the analysis response."
+    : "Open the floating RedFlag button to view the latest server response.";
 }
 
 async function load() {
@@ -27,7 +29,7 @@ async function load() {
   scanButton.disabled = !settings.enabled;
   try {
     const status = await messageTab({ type: "REDFLAG_STATUS" });
-    showCount(status.count);
+    showCount(status.count, status.status);
   } catch {
     icon.textContent = "!";
     title.textContent = "Page not supported";
@@ -51,9 +53,10 @@ scanButton.addEventListener("click", async () => {
   scanButton.textContent = "Scanning…";
   try {
     const result = await messageTab({ type: "REDFLAG_SCAN" });
-    showCount(result.count);
+    showCount(result.count, result.status);
   } catch {
     title.textContent = "Unable to scan this page";
+    copy.textContent = "Check that the analysis backend is running.";
   } finally {
     scanButton.disabled = !enabledInput.checked;
     scanButton.textContent = "Scan this page now";

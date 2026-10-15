@@ -161,3 +161,36 @@
   #redflag-launcher { bottom: 14px; right: 14px; }
   #redflag-panel { bottom: 72px; right: 14px; width: calc(100vw - 28px); }
 }
+
+/* Frontend display of the request and response from /analyze. */
+.rf-exchange {
+  border-top: 1px solid #e7e5e4;
+  padding: 12px 18px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.rf-exchange h3 {
+  font: 700 13px system-ui, sans-serif;
+  margin: 0 0 8px;
+}
+.rf-exchange strong {
+  display: block;
+  font: 650 12px system-ui, sans-serif;
+  margin-top: 8px;
+}
+.rf-exchange pre {
+  background: #f5f5f4;
+  border-radius: 6px;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  margin: 4px 0 8px;
+  max-height: 85px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+.rf-scan-status { color: #57534e; font: 12px system-ui, sans-serif; margin: 6px 0 0; }
+
+/* Allow both server output and the findings list to remain reachable. */
+#redflag-panel { overflow-y: auto; }
+.rf-list { max-height: 260px; }
