@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import re
 
+from db import get_connection
+
 app = Flask(__name__)
 CORS(app)
 
@@ -84,6 +86,19 @@ def analyze():
 
     text = data.get("text", "")
 
+    # save claims, but if database is not up let it still run
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO claims (claim, label, reason) VALUES (%s, %s, %s)",
+            (claim, "", ""),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as error:
+        print("Database write failed:", error)
+
     for rule in RULES:
         if rule["pattern"].search(text):
             return jsonify({
@@ -97,6 +112,37 @@ def analyze():
     return jsonify({
         "flagged": False,
     })
+
+# Simple call to check if the backend can reach the database.
+# Run curl http://127.0.0.1:5000/db_check to test
+@app.route("/db_check") 
+def db_check():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        conn.close()
+        return jsonify({"db": "ok"})
+    except Exception as error:
+        return jsonify({"db": "unreachable", "error": str(error)}), 500
+
+# Another simple call that will pull back claims once we actually insert them into the DB
+# Currently returns nothing unless claims added
+# Run curl http://127.0.0.1:5000/claims
+@app.route("/claims")
+def claims():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, claim, label, reason FROM claims ORDER BY id DESC LIMIT 10")
+        rows = cur.fetchall()
+        conn.close()
+        return jsonify([
+            {"id": r[0], "claim": r[1], "label": r[2], "reason": r[3]} for r in rows
+        ])
+    except Exception as error:
+        return jsonify({"db": "unreachable", "error": str(error)}), 500
+
 
 if __name__ == "__main__":
     app.run(debug=True)

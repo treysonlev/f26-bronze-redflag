@@ -23,3 +23,7 @@ gradle-app.setting
 # Secrets
 .env
 !.env.example
+
+# Python temp files that are inconsequential to track
+__pycache__/
+*.pyc
