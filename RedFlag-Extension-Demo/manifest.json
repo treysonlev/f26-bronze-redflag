@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "description": "Flags potentially misleading claims on webpages and explains why they need verification.",
   "permissions": ["storage", "activeTab"],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:5000/"
+  ],
   "background": {
     "service_worker": "background.js"
   },

@@ -10,19 +10,21 @@
   let observer;
 
   async function analyze(text) {
-    const response = await fetch("http://127.0.0.1:5000/analyze", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ text })
+    const result = await chrome.runtime.sendMessage({
+      type: "REDFLAG_ANALYZE",
+      text
     });
 
-    if (!response.ok) {
-      throw new Error(`Backend returned ${response.status}`);
+    if (result?.error) {
+      throw new Error(result.error);
     }
 
-    return await response.json();
+    if (!result) {
+      throw new Error("No response received from the background.");
+    }
+    console.log("RedFlag backend response: ", result)
+
+    return result;
   }
 
   function eligible(node) {
@@ -71,7 +73,7 @@
     if (after) fragment.append(document.createTextNode(after));
     node.replaceWith(fragment);
 
-    findings.push({ claim: matched, label: rule.label, reason: rule.reason, flagtype: rule.flagtype });
+    findings.push({ claim: matched, label: rule.label, reason: rule.reason, flagtype: rule.flagtype, result: rule.result });
   }
 
   async function scanPage() {
@@ -132,7 +134,17 @@
       ? findings.map((item, index) => 
       {
         const itemClass = item.flagtype == "redflag" ? "rf" : item.flagtype == "biasstar" ? "bs" : item.flagtype == "signal" ? "sw" : "";
-      return `<article class="${itemClass}-item" data-index="${index}"><div class="${itemClass}-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`}).join("")
+      return `<article class="${itemClass}-item" data-index="${index}">
+        <div class="${itemClass}-item-title">${escapeHTML(item.label)}</div>
+        <div class="rf-result">Verdict: ${escapeHTML(
+          item.result === "true" ? "True" :
+          item.result === "false" ? "False" :
+          "Unable to verify"
+        )}</div>
+        <div class="rf-claim">"${escapeHTML(item.claim)}"</div>
+        <div class="rf-reason">${escapeHTML(item.reason)}</div>
+      </article>`;
+      }).join("")
       : `<div class="rf-empty">RedFlag did not find any claims covered by the current demo rules.</div>`;
     chrome.runtime.sendMessage({ type: "REDFLAG_BADGE", count: findings.length }).catch(() => {});
   }
