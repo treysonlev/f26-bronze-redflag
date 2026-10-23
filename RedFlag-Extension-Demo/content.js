@@ -30,6 +30,8 @@
     if (!response.ok) throw new Error(`Analysis endpoint returned HTTP ${response.status}`);
 
     const result = await response.json();
+
+    console.log("RedFlag backend response:", result)
     responseCache.set(text, result);
     if (responseCache.size > 200) responseCache.delete(responseCache.keys().next().value);
     return result;
@@ -76,7 +78,8 @@
         label: String(item.label ?? item.category ?? item.classification ?? "Needs verification"),
         reason: String(item.reason ?? item.explanation ?? item.rationale ?? item.details ??
           "The analysis service marked this claim for verification."),
-        flagtype: normalizeFlagType(item.flagtype ?? item.flag_type ?? item.type)
+        flagtype: normalizeFlagType(item.flagtype ?? item.flag_type ?? item.type),
+        result: normalizeVerdict(item.result ?? item.verdict)
       }));
   }
 
@@ -85,6 +88,15 @@
     if (name === "biasstar" || name === "bias") return "biasstar";
     if (name === "signal" || name === "warning") return "signal";
     return "redflag";
+  }
+
+  function normalizeVerdict(value) {
+    const verdict = String(value ?? "unable_to_verify").toLowerCase().trim();
+
+    if (verdict === "true") return "true";
+    if (verdict === "false") return "false";
+
+    return "unable_to_verify";
   }
 
   function displayResponse(reply) {
@@ -254,7 +266,16 @@
     panel.querySelector(".rf-list").innerHTML = findings.length
       ? findings.map((item, index) => {
           const itemClass = item.flagtype === "biasstar" ? "bs" : item.flagtype === "signal" ? "sw" : "rf";
-          return `<article class="${itemClass}-item" data-index="${index}"><div class="${itemClass}-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div></article>`;
+          return `<article class="${itemClass}-item" data-index="${index}">
+            <div class="${itemClass}-item-title">${escapeHTML(item.label)}</div>
+            <div class="rf-result"> ${escapeHTML(
+              item.result === "true" ? "True" :
+              item.result === "false" ? "False" :
+              "Unable to verify"
+            )}</div>
+            <div class="rf-claim">"${escapeHTML(item.claim)}"</div>
+            <div class="rf-reason">${escapeHTML(item.reason)}</div>
+          </article>`;
         }).join("")
       : `<div class="rf-empty">Results returned by the analysis service appear here.</div>`;
 
