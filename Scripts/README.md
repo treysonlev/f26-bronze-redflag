@@ -1,3 +1,4 @@
+# Deprecated
 # Important
 .env holds the API key and endpoint, never commit and push these
 
