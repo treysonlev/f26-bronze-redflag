@@ -7,19 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Connect to the existing database, then open a cursor to perrform db operations
+# Connect to the existing database, then open a cursor to perform db operations
 conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
-
-# cur.execute("""
-#     CREATE TABLE IF NOT EXISTS claims (
-#         id SERIAL PRIMARY KEY,
-#         claim TEXT NOT NULL,
-#         label TEXT,
-#         reason TEXT,
-#         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-#     )
-# """)
 
 cur.execute("SELECT to_regclass('public.claims') IS NOT NULL")
 table_exists = cur.fetchone()[0]
