@@ -22,3 +22,10 @@ This is a script that simply has 2 functions, get_client() and chat()
 - make sure you have your .env set up, refer to .env.example
 - Run the following command and replace Say hi with whatever you want
 - python -c "import llm; print(llm.chat('Say hi'))"
+
+## Testing llm backend integration
+- Follow the setup instructions to start up the python server
+- The function uses HTTP POST requests, so you'll need to use something that supports that, like curl
+- You can run this curl command in the terminal, feel free to change the  content of the prompt to test. Note that if the output is too large it'll hit the token limit set by llm.py
+- curl -X POST http://127.0.0.1:5000/llm_test -H "Content-Type: application/json" -d '{"prompt":"Tell me a funny joke"}'
+- The frontend should be using HTTP POST requests for the api
