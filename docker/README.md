@@ -11,7 +11,6 @@
 4) python3 db_test.py        # needs: pip install psycopg2-binary python-dotenv
 5) docker compose down       # stops it (volume for the local container will persist)
 
-
 ## Troubleshooting
 To connect to the db in your local terminal (cd to docker folder) and run 
 1) docker exec -it redflag-db psql -U redflag -d redflag 
@@ -26,7 +25,7 @@ To remove the CLAIMS table from your local database, run the following command i
 1) DROP TABLE IF EXISTS claims;
 
 To remove all rows from the CLAIMS table, run the following command in psql:
-1) DELETE FRROM claims;
+1) DELETE FROM claims;
 
 To re-apply the schema defined in 01_schema.sql, run the following commands:
 1) docker compose up -d db 													# Ensures PostgreSQL is running
