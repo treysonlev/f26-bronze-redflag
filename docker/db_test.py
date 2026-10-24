@@ -5,6 +5,7 @@ import os
 import psycopg2
 from psycopg2 import sql
 from dotenv import load_dotenv
+from textwrap import fill
 
 load_dotenv()
 
@@ -175,29 +176,106 @@ conn.commit()
 print(f"Inserted source with id {source_id} and verdict with id {verdict_id}")
 
 
+
 # Display the number of rows in each table
 print_row_counts()
 
-cur.execute("SELECT * FROM claim ORDER BY claim_id DESC LIMIT 1")
-print("Last row in CLAIM:  ", cur.fetchone())
+def print_field(label, value):
+    text = f"{label}: {value}"
+    print(fill(text, width=88, subsequent_indent="    "))
+
+# Show all of the testing database entries made
+print("\n" + "=" * 88)
+print("DATABASE TEST ENTRIES")
+print("=" * 88)
+
+cur.execute(
+    "SELECT claim, verdict_id FROM claim WHERE claim_id = %s",
+    (claim_id,),
+)
+claim_row = cur.fetchone()
+
+cur.execute(
+    """
+    SELECT keyword_id, claim_id, keyword
+    FROM keyword
+    WHERE claim_id = %s
+    ORDER BY keyword_id
+    """,
+    (claim_id,),
+)
+keyword_rows = cur.fetchall()
+
+cur.execute(
+    """
+    SELECT url, excerpt, date_collected
+    FROM source
+    WHERE source_id = %s
+    """,
+    (source_id,),
+)
+source_row = cur.fetchone()
+
+cur.execute(
+    """
+    SELECT source_id, verdict, explanation, correctness, confidence, "timestamp"
+    FROM verdict
+    WHERE verdict_id = %s
+    """,
+    (verdict_id,),
+)
+verdict_row = cur.fetchone()
+
+print("\nCLAIM " + "-" * 82)
+print_field("ID", claim_id)
+print_field("Text", claim_row[0])
+print_field("Verdict ID", claim_row[1])
+
+print("\n\nKEYWORD " + "-" * 80)
+for keyword_row in keyword_rows:
+    print_field("ID", keyword_row[0])
+    print_field("Claim ID", keyword_row[1])
+    print_field("Keyword", keyword_row[2])
+    print()
+
+print("\nSOURCE " + "-" * 81)
+print_field("ID", source_id)
+print_field("URL", source_row[0])
+print_field("Excerpt", source_row[1])
+print_field("Date collected", source_row[2])
+
+print("\n\nVERDICT " + "-" * 80)
+print_field("ID", verdict_id)
+print_field("Source ID", verdict_row[0])
+print_field("Verdict", verdict_row[1])
+print_field("Explanation", verdict_row[2])
+print_field("Correctness", verdict_row[3])
+print_field("Confidence", verdict_row[4])
+print_field("Timestamp", verdict_row[5])
+
+print("\n" + "=" * 88)
 
 conn.commit()
 
 
 
 # Remove inserted rows from the database
-# Remove the claim and its keywords
+# Remove the claim and its keywords (delete will cascade)
 cur.execute("""
     DELETE FROM claim
 	WHERE claim = 'The Earth is Flat (db_test.py claim)'
     """	
 )
+
+# Remove the verdict
 cur.execute("""
     DELETE FROM verdict
 	WHERE verdict_id = %(verdict_id)s
     """,
     {'verdict_id': verdict_id}
 )
+
+# Remove the source
 cur.execute("""
     DELETE FROM source
 	WHERE source_id = %(source_id)s
@@ -218,12 +296,6 @@ reset_id_count("verdict", "verdict_id")
 
 conn.commit()
 print("All rows added by this test have been removed")
-
-
-# cur.execute("""
-    
-#     """	
-# )
 
 conn.close()
 print("Database test passed.")
