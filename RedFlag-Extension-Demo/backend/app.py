@@ -3,6 +3,7 @@ from flask_cors import CORS
 import re
 
 from db import get_connection
+import llm
 
 app = Flask(__name__)
 CORS(app)
@@ -127,6 +128,28 @@ def analyze():
         "label": "No matching rule",
         "reason": "This did not match any of the current demo rules."
     })
+
+# Standalone endpoint that makes a real call to ODU's LLM.
+# Run curl -X POST http://127.0.0.1:5000/llm_test -H "Content-Type: application/json" -d '{"prompt":"Say hi"}'
+# /analyze is still regex-only; wiring the LLM into it is a follow-up.
+@app.route("/llm_test", methods=["POST"])
+def llm_test():
+    data = request.get_json(silent=True) or {}
+
+    prompt = data.get("prompt", "")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return jsonify({"error": "Request body must include a non-empty 'prompt' string."}), 400
+
+    try:
+        answer = llm.chat(
+            prompt,
+            temperature=data.get("temperature", 0.7),
+            max_tokens=data.get("max_tokens", 300),
+        )
+        return jsonify({"response": answer})
+    except Exception as error:
+        # Missing .env, network failure, LLM down: report it but keep the server running.
+        return jsonify({"error": str(error)}), 502
 
 # Simple call to check if the backend can reach the database.
 # Run curl http://127.0.0.1:5000/db_check to test

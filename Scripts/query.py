@@ -1,3 +1,5 @@
+# Proof of concept script, moved into llm.py now
+
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
