@@ -74,7 +74,6 @@
     return items.filter(item => item && typeof item === "object" && item.flagged !== false)
       .map(item => ({
         claim: String(item.matched_text ?? item.claim ?? item.phrase ?? item.quote ?? ""),
-        pattern: typeof item.pattern === "string" ? item.pattern : "",
         label: String(item.label ?? item.category ?? item.classification ?? "Needs verification"),
         reason: String(item.reason ?? item.explanation ?? item.rationale ?? item.details ??
           "The analysis service marked this claim for verification."),
@@ -110,11 +109,24 @@
     return String(text ?? "(empty response)").slice(0, 5000);
   }
 
+  function scanRoot() {
+    // Only analyze the article body so nav menus, bylines and timestamps
+    // never reach the LLM.
+    return document.querySelector("article, main, [role='main']") || document.body;
+  }
+
+  const BOILERPLATE_SELECTOR = [
+    "nav", "header", "footer", "aside", "form", "time",
+    ".meta", "[class*='meta']", "[class*='byline']", "[class*='timestamp']",
+    "[class*='share']", "[class*='related']", "[data-rf-ignore]"
+  ].join(",");G
+
   function eligible(node) {
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
     if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-highlight, .signalwarning-highlight")) return false;
+    if (parent.closest(BOILERPLATE_SELECTOR)) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
     return Boolean(parent.offsetParent || parent.getClientRects().length);
@@ -133,18 +145,10 @@
     let index = -1;
     let matched = "";
 
-    // The LLM can return an exact matched phrase. No regex is required.
+    // The LLM returns an exact verbatim phrase; highlight it.
     if (finding.claim) {
       index = text.toLowerCase().indexOf(finding.claim.toLowerCase());
       if (index >= 0) matched = text.slice(index, index + finding.claim.length);
-    }
-
-    // Preserve compatibility with the existing rule-based Flask response.
-    if (index < 0 && finding.pattern) {
-      try {
-        const match = new RegExp(finding.pattern, "i").exec(text);
-        if (match) { index = match.index; matched = match[0]; }
-      } catch { /* Invalid regex from service: use full analyzed text. */ }
     }
 
     // The LLM may flag a passage without returning an exact phrase.
@@ -178,7 +182,7 @@
     updateUI();
 
     try {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const walker = document.createTreeWalker(scanRoot(), NodeFilter.SHOW_TEXT);
       const nodes = [];
       while (walker.nextNode() && nodes.length < MAX_TEXT_NODES_PER_SCAN) {
         if (eligible(walker.currentNode)) nodes.push(walker.currentNode);
