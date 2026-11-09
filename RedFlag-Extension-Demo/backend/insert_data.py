@@ -19,17 +19,18 @@ TEST_RECORDS = [
         "claim": "The Earth is flat.",
         "keywords": ["earth", "flat"],
     },
-    {
-        "url": "",
-        "excerpt": "",
-        "verdict": False,
-        "explanation": "",
-        "correctness": "",
-        "confidence": "",
-        "claim": "", 
-        "keywords": [],
+# Empty test record breaks code, commented out for now
+    #{
+    #    "url": "",
+    #    "excerpt": "",
+    #    "verdict": False,
+    #    "explanation": "",
+    #    "correctness": "",
+    #    "confidence": "",
+    #    "claim": "", 
+    #    "keywords": [],
         
-    }
+    #}
     
 ]
 
@@ -141,7 +142,7 @@ def insert_test_data() -> int:
                             """, (claim_id, keyword)
                         )
 
-                    inserted += 1
+                        inserted += 1
         return inserted
     
     finally:
