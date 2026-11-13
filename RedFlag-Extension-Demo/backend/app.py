@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, Response, request, jsonify
 from flask_cors import CORS
 from urllib.parse import quote
 import hashlib
@@ -7,6 +7,7 @@ import re
 import os
 from difflib import SequenceMatcher
 from functools import lru_cache
+from typing import Any, Dict, List, Optional, Tuple, Union
 from dotenv import load_dotenv
 import requests
 
@@ -28,25 +29,53 @@ BIASSTAR_RULES = [
 ]
 
 @app.route("/")
-def home():
+def home() -> str:
+    """Return a simple message confirming that the backend is running.
+
+    Returns:
+        str: A status message for the root endpoint.
+    """
     return "RedFlag backend is running!"
 
 
-def _normalize_for_hash(text):
-    """Canonical form of analyzed text so trivially different whitespace
-    still hits the claims cache."""
+def _normalize_for_hash(text: str) -> str:
+    """Normalize analyzed text so whitespace and letter case do not affect caching.
+
+    Args:
+        text (str): The text whose normalized form will be used for caching.
+
+    Returns:
+        str: The text with collapsed whitespace, no surrounding whitespace,
+            and lowercase characters.
+    """
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-def _text_hash(text):
+def _text_hash(text: str) -> str:
+    """Create a stable SHA-256 hash for normalized analyzed text.
+
+    Args:
+        text (str): The text to hash.
+
+    Returns:
+        str: The hexadecimal SHA-256 digest of the normalized text.
+    """
     return hashlib.sha256(_normalize_for_hash(text).encode("utf-8")).hexdigest()
 
 
-def _cache_lookup(text):
+def _cache_lookup(text: str) -> Optional[List[Dict[str, Any]]]:
     """Return previously persisted findings for this exact text, or None.
     A stored empty-claim row means the LLM previously cleared this text, so
     an empty list (not None) is returned and no LLM call is needed.
-    Raises on DB errors so the caller can log and continue without cache."""
+    Raises on DB errors so the caller can log and continue without cache.
+
+    Args:
+        text (str): The analyzed text whose persisted findings should be retrieved.
+
+    Returns:
+        Optional[List[Dict[str, Any]]]: The cached findings, an empty list if
+            the text was previously cleared, or None if no cache row exists.
+    """
     conn = get_connection()
     try:
         with conn, conn.cursor() as cur:
@@ -74,9 +103,17 @@ def _cache_lookup(text):
     ]
 
 
-def _persist_finding(text, finding):
-    """Store one LLM-verified finding for caching. DB failures must never
-    break the response, so callers wrap this in try/except."""
+def _persist_finding(text: str, finding: Dict[str, Any]) -> None:
+    """Store one analyzed finding so it can be reused for future requests.
+    DB failures must never break the response, so callers wrap this in try/except.
+
+    Args:
+        text (str): The analyzed text associated with the finding.
+        finding (Dict[str, Any]): The finding to persist.
+
+    Returns:
+        None: This function writes to the database and returns no value.
+    """
     conn = get_connection()
     try:
         with conn, conn.cursor() as cur:
@@ -96,8 +133,19 @@ def _persist_finding(text, finding):
         conn.close()
 
 
-def _analyze_response(findings):
-    """Shape findings the way FRONTEND_INTEGRATION.md specifies."""
+def _analyze_response(
+    findings: List[Dict[str, Any]],
+) -> Union[Response, Tuple[Response, int]]:
+    """Format analysis findings as the frontend API response.
+
+    Args:
+        findings (List[Dict[str, Any]]): Findings to format and include in the
+            response.
+
+    Returns:
+        Union[Response, Tuple[Response, int]]: A JSON response, optionally
+            paired with an HTTP status code.
+    """
     if not findings:
         return jsonify({"flagged": False})
     findings = _add_sources(findings)
@@ -119,7 +167,15 @@ SOURCE_SEARCHES = [
 _url_ok_cache = {}
 
 
-def _url_resolves(url):
+def _url_resolves(url: str) -> bool:
+    """Check whether a URL responds successfully to an HTTP request.
+
+    Args:
+        url (str): The URL to check.
+
+    Returns:
+        bool: True if the URL resolves with a status below 400; otherwise False.
+    """
     if url in _url_ok_cache:
         return _url_ok_cache[url]
     try:
@@ -137,7 +193,15 @@ def _url_resolves(url):
     return ok
 
 
-def _search_sources(claim):
+def _search_sources(claim: str) -> List[Dict[str, str]]:
+    """Build fallback search links for a claim.
+
+    Args:
+        claim (str): The claim to search for.
+
+    Returns:
+        List[Dict[str, str]]: Search-provider names paired with encoded search URLs.
+    """
     query = quote(f'"{claim}"' if len(claim) <= 80 else claim)
     return [
         {"name": name, "url": template.format(q=query)}
@@ -147,7 +211,16 @@ def _search_sources(claim):
 # Search published fact-check articles using Google's API.
 # Cache results to avoid repeated calls for the same claim.
 @lru_cache(maxsize=512)
-def _google_fact_check_sources(claim):
+def _google_fact_check_sources(claim: str) -> List[Dict[str, str]]:
+    """Find relevant published fact checks through Google's Fact Check API.
+
+    Args:
+        claim (str): The claim to look up.
+
+    Returns:
+        List[Dict[str, str]]: Up to three relevant fact-check sources, or an
+            empty list if none are available.
+    """
     api_key = os.getenv("GOOGLE_FACT_CHECK_API_KEY")
 
     if not api_key:
@@ -240,11 +313,20 @@ _WIKI_STOPWORDS = {
 }
 
 
-def _wiki_relevant(claim, title, snippet):
+def _wiki_relevant(claim: str, title: str, snippet: str) -> bool:
     """Keep a Wikipedia hit when a distinctive claim word appears in the
     article title, or at least two appear (as whole words) in the snippet.
     This rejects vague matches like 'force majeure' hitting an unrelated
-    war timeline while keeping e.g. 'vaccines...' -> a vaccine article."""
+    war timeline while keeping e.g. 'vaccines...' -> a vaccine article.
+
+    Args:
+        claim (str): The claim being checked for a relevant article.
+        title (str): The Wikipedia search result title.
+        snippet (str): The search result snippet.
+
+    Returns:
+        bool: True if distinctive claim terms make the result relevant.
+    """
     import html as htmllib
     words = [w for w in re.findall(r"[a-z0-9']+", claim.lower())
              if len(w) > 3 and w not in _WIKI_STOPWORDS]
@@ -259,7 +341,16 @@ def _wiki_relevant(claim, title, snippet):
     return hits >= 2
 
 
-def _wikipedia_source(claim):
+def _wikipedia_source(claim: str) -> Optional[Dict[str, str]]:
+    """Find a relevant Wikipedia article to use as a reference source.
+
+    Args:
+        claim (str): The claim for which to find an article.
+
+    Returns:
+        Optional[Dict[str, str]]: The article name and URL, or None if no
+            relevant article is found.
+    """
     if claim in _wiki_cache:
         return _wiki_cache[claim]
     source = None
@@ -289,8 +380,16 @@ def _wikipedia_source(claim):
 
 
 
-def _add_sources(findings):
-    """Find verification links for each RedFlag claim."""
+def _add_sources(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Attach verification links to findings that need fact-check sources.
+
+    Args:
+        findings (List[Dict[str, Any]]): Findings whose sources should be added
+            or updated.
+
+    Returns:
+        List[Dict[str, Any]]: The same findings list with source data populated.
+    """
 
     for finding in findings:
 
@@ -339,12 +438,28 @@ def _add_sources(findings):
 _FLAGTYPE_PRIORITY = {"redflag": 0, "biasstar": 1, "signal": 2}
 
 
-def _sort_findings(findings):
+def _sort_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Order findings by flag type so the most important type appears first.
+
+    Args:
+        findings (List[Dict[str, Any]]): Findings to order.
+
+    Returns:
+        List[Dict[str, Any]]: Findings ordered by flag-type priority.
+    """
     return sorted(findings, key=lambda f: _FLAGTYPE_PRIORITY.get(f["flagtype"], 3))
 
 
-def _biasstar_findings(text):
-    """Hardcoded regex BiasStar check; returns findings for divisive topics."""
+def _biasstar_findings(text: str) -> List[Dict[str, Any]]:
+    """Find divisive-topic phrases using the configured BiasStar regex rules.
+
+    Args:
+        text (str): The passage to scan.
+
+    Returns:
+        List[Dict[str, Any]]: BiasStar findings for matched phrases, or an empty
+            list if no rule matches.
+    """
     findings = []
     for rule in BIASSTAR_RULES:
         match = rule["pattern"].search(text)
@@ -360,7 +475,13 @@ def _biasstar_findings(text):
 
 
 @app.route("/analyze", methods=["POST"])
-def analyze():
+def analyze() -> Union[Response, Tuple[Response, int]]:
+    """Analyze submitted text and return its findings as JSON.
+
+    Returns:
+        Union[Response, Tuple[Response, int]]: The analysis response, with an
+            HTTP error status when the input or analysis service fails.
+    """
     data = request.get_json(silent=True) or {}
     text = data.get("text", "")
     if not isinstance(text, str) or not text.strip():
@@ -417,7 +538,13 @@ def analyze():
 # Run curl -X POST http://127.0.0.1:5000/llm_test -H "Content-Type: application/json" -d '{"prompt":"Say hi"}'
 # /analyze sends passages to the LLM itself; this endpoint is a raw connectivity test.
 @app.route("/llm_test", methods=["POST"])
-def llm_test():
+def llm_test() -> Union[Response, Tuple[Response, int]]:
+    """Send a prompt to the LLM and return its response as JSON.
+
+    Returns:
+        Union[Response, Tuple[Response, int]]: The LLM response, or a JSON
+            error response with an HTTP error status.
+    """
     data = request.get_json(silent=True) or {}
 
     prompt = data.get("prompt", "")
@@ -438,7 +565,13 @@ def llm_test():
 # Simple call to check if the backend can reach the database.
 # Run curl http://127.0.0.1:5000/db_check to test
 @app.route("/db_check") 
-def db_check():
+def db_check() -> Union[Response, Tuple[Response, int]]:
+    """Check whether the backend can connect to its database.
+
+    Returns:
+        Union[Response, Tuple[Response, int]]: A JSON database status response,
+            with HTTP 500 and error details if the check fails.
+    """
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -452,7 +585,13 @@ def db_check():
 # Currently returns nothing unless claims added
 # Run curl http://127.0.0.1:5000/claims
 @app.route("/claims")
-def claims():
+def claims() -> Union[Response, Tuple[Response, int]]:
+    """Return the ten most recently stored claims as JSON.
+
+    Returns:
+        Union[Response, Tuple[Response, int]]: A JSON list of recent claims,
+            or a JSON error response with HTTP 500 if retrieval fails.
+    """
     try:
         conn = get_connection()
         cur = conn.cursor()
