@@ -1,3 +1,8 @@
+"""
+This module defines all operations made on the database. Database creation,
+data retrieval and creation, etc.
+"""
+
 # Flask to postgres connection
 import os
 
@@ -24,7 +29,7 @@ def get_connection():
 
 def init_db():
     """
-    Create the database defined in the project's SQL schema
+    Apply the project's SQL schema, including the ERD and extension findings.
     """
     if not SCHEMA_FILE.is_file():
         raise FileNotFoundError(f"Database schema file not found: {SCHEMA_FILE}")
@@ -39,6 +44,17 @@ def init_db():
             cur.execute(schema_sql)
     finally:
         conn.close()
+
+
+def insert_data(): 
+    """
+    Define methods to insert data into the database
+    """
+    return
+
+
+
+
 
 
 

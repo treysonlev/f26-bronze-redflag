@@ -1,7 +1,8 @@
 -- =====================================================================
 -- RedFlag database schema
 -- Target: PostgreSQL 16 (redflag-db container)
--- Matches the RedFlag ERD: SOURCE, VERDICT, CLAIM, KEYWORD
+-- Matches the RedFlag ERD and stores extension findings:
+-- SOURCE, VERDICT, CLAIM, KEYWORD, FINDING
 -- ERD can be found here: 
 -- https://docs.google.com/document/d/1NLMD_OJMcnHvp8xkk-Pcyw1ucdz-jwNKqNE4qK6Zux8/edit?tab=t.0
 -- 
@@ -67,6 +68,29 @@ CREATE TABLE IF NOT EXISTS claim (
 );
 
 -- ---------------------------------------------------------------------
+-- FINDING: a result displayed by the extension. A finding can optionally
+-- link to a factual claim; heuristic signals need not have a claim/verdict.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS finding (
+    finding_id    INTEGER GENERATED ALWAYS AS IDENTITY,
+    claim_id      INTEGER      NULL,
+    matched_text  TEXT         NOT NULL,
+    label         VARCHAR(120) NOT NULL,
+    reason        VARCHAR(600) NOT NULL,
+    flagtype      VARCHAR(20)  NOT NULL,
+    result        VARCHAR(20)  NOT NULL DEFAULT 'unable_to_verify',
+    "timestamp"   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT pk_finding PRIMARY KEY (finding_id),
+    CONSTRAINT fk_finding_claim FOREIGN KEY (claim_id)
+        REFERENCES claim (claim_id) ON DELETE SET NULL,
+    CONSTRAINT ck_finding_flagtype
+        CHECK (flagtype IN ('redflag', 'biasstar', 'signal')),
+    CONSTRAINT ck_finding_result
+        CHECK (result IN ('true', 'false', 'unable_to_verify'))
+);
+
+-- ---------------------------------------------------------------------
 -- KEYWORD: a search term that identifies one claim during retrieval.
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS keyword (
@@ -83,6 +107,7 @@ CREATE TABLE IF NOT EXISTS keyword (
 -- Speeds up retrieval, which looks up claims by keyword.
 CREATE INDEX IF NOT EXISTS idx_keyword_keyword  ON keyword (LOWER(keyword));
 CREATE INDEX IF NOT EXISTS idx_keyword_claim_id ON keyword (claim_id);
+CREATE INDEX IF NOT EXISTS idx_finding_claim_id ON finding (claim_id);
 
 -- ---------------------------------------------------------------------
 -- Rules the backend must enforce (foreign keys cannot require these):

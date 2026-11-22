@@ -2,6 +2,23 @@
 # Important
 .env holds the API key and endpoint, never commit and push these
 
+# Resetting the RedFlag database
+
+`reset_database.py` drops the RedFlag tables (including the legacy `claims`
+cache) and their data. It reads `DATABASE_URL` from `docker/.env`, or from the
+environment, and requires typing the connected database target before it
+proceeds. Ensure the docker container is running first.
+
+From the repository root, install the script requirements if needed and run:
+
+```
+python -m pip install -r Scripts/requirements.txt
+python Scripts/reset_database.py
+```
+
+The script only drops the tables; it does not recreate them. Start the backend
+afterward so `init_db()` applies `docker/init/01_schema.sql`.
+
 # How to use
 ## Requirements
 1) Have pip and python3 installed
