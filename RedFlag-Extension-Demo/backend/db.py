@@ -2,6 +2,15 @@
 import os
 
 import psycopg2
+from pathlib import Path
+
+# Define the path to the schema file where the database is located
+SCHEMA_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "docker"
+    / "init"
+    / "01_schema.sql"
+)
 
 
 def get_connection():
@@ -13,6 +22,30 @@ def get_connection():
     )
 
 
+def init_db_schema():
+    """
+    Create the database defined in the project's SQL schema
+    """
+    if not SCHEMA_FILE.is_file():
+        raise FileNotFoundError(f"Database schema file not found: {SCHEMA_FILE}")
+
+    schema_sql = SCHEMA_FILE.read_text(encoding="utf-8")
+
+    conn = get_connection()
+    try:
+        # The schema file contains its own BEGIN and COMMIT.
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(schema_sql)
+    finally:
+        conn.close()
+
+
+
+
+# This is the old init_db() that creats the old 'claims' table, I'm keeping it around
+# temporarily for reference
+'''
 def init_db():
     """Create the claims cache table used by /analyze, if it does not exist.
 
@@ -44,3 +77,4 @@ def init_db():
             )
     finally:
         conn.close()
+'''
