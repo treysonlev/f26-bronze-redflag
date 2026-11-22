@@ -22,7 +22,7 @@ def get_connection():
     )
 
 
-def init_db_schema():
+def init_db():
     """
     Create the database defined in the project's SQL schema
     """
