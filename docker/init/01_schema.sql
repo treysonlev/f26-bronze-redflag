@@ -19,7 +19,7 @@ BEGIN;
 -- ---------------------------------------------------------------------
 -- SOURCE: a webpage excerpt used as evidence for exactly one verdict.
 -- ---------------------------------------------------------------------
-CREATE TABLE source (
+CREATE TABLE IF NOT EXISTS source (
     source_id       INTEGER GENERATED ALWAYS AS IDENTITY,
     url             VARCHAR(2048) NOT NULL,
     excerpt         VARCHAR(2048) NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE source (
 -- ---------------------------------------------------------------------
 -- VERDICT: the LLM's evaluation of one claim against one source.
 -- ---------------------------------------------------------------------
-CREATE TABLE verdict (
+CREATE TABLE IF NOT EXISTS verdict (
     verdict_id   INTEGER GENERATED ALWAYS AS IDENTITY,
     source_id    INTEGER       NOT NULL,
     verdict      BOOLEAN       NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE verdict (
 -- CLAIM: a factual assertion extracted from page text.
 -- verdict_id is NULL until the claim has been verified.
 -- ---------------------------------------------------------------------
-CREATE TABLE claim (
+CREATE TABLE IF NOT EXISTS claim (
     claim_id    INTEGER GENERATED ALWAYS AS IDENTITY,
     claim       VARCHAR(255) NOT NULL,
     verdict_id  INTEGER      NULL,
@@ -69,7 +69,7 @@ CREATE TABLE claim (
 -- ---------------------------------------------------------------------
 -- KEYWORD: a search term that identifies one claim during retrieval.
 -- ---------------------------------------------------------------------
-CREATE TABLE keyword (
+CREATE TABLE IF NOT EXISTS keyword (
     keyword_id  INTEGER GENERATED ALWAYS AS IDENTITY,
     claim_id    INTEGER     NOT NULL,
     keyword     VARCHAR(50) NOT NULL,
@@ -81,8 +81,8 @@ CREATE TABLE keyword (
 );
 
 -- Speeds up retrieval, which looks up claims by keyword.
-CREATE INDEX idx_keyword_keyword  ON keyword (LOWER(keyword));
-CREATE INDEX idx_keyword_claim_id ON keyword (claim_id);
+CREATE INDEX IF NOT EXISTS idx_keyword_keyword  ON keyword (LOWER(keyword));
+CREATE INDEX IF NOT EXISTS idx_keyword_claim_id ON keyword (claim_id);
 
 -- ---------------------------------------------------------------------
 -- Rules the backend must enforce (foreign keys cannot require these):
