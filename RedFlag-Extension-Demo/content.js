@@ -30,8 +30,6 @@
     if (!response.ok) throw new Error(`Analysis endpoint returned HTTP ${response.status}`);
 
     const result = await response.json();
-
-    console.log("RedFlag backend response:", result)
     responseCache.set(text, result);
     if (responseCache.size > 200) responseCache.delete(responseCache.keys().next().value);
     return result;
@@ -65,11 +63,11 @@
     const data = unwrapAnalysis(serverReply);
     const items = Array.isArray(data) ? data
       : Array.isArray(data?.findings) ? data.findings
-      : Array.isArray(data?.flags) ? data.flags
-      : Array.isArray(data?.results) ? data.results
-      : Array.isArray(data?.claims) ? data.claims
-      : data && (data.flagged === true || data.is_misinformation === true) ? [data]
-      : [];
+        : Array.isArray(data?.flags) ? data.flags
+          : Array.isArray(data?.results) ? data.results
+            : Array.isArray(data?.claims) ? data.claims
+              : data && (data.flagged === true || data.is_misinformation === true) ? [data]
+                : [];
 
     return items.filter(item => item && typeof item === "object" && item.flagged !== false)
       .map(item => ({
@@ -79,7 +77,9 @@
         reason: String(item.reason ?? item.explanation ?? item.rationale ?? item.details ??
           "The analysis service marked this claim for verification."),
         flagtype: normalizeFlagType(item.flagtype ?? item.flag_type ?? item.type),
-        result: normalizeVerdict(item.result ?? item.verdict)
+        sources: Array.isArray(item.sources)
+          ? item.sources.filter(s => s && typeof s === "object")
+          : []
       }));
   }
 
@@ -90,15 +90,6 @@
     return "redflag";
   }
 
-  function normalizeVerdict(value) {
-    const verdict = String(value ?? "unable_to_verify").toLowerCase().trim();
-
-    if (verdict === "true") return "true";
-    if (verdict === "false") return "false";
-
-    return "unable_to_verify";
-  }
-
   function displayResponse(reply) {
     // Prefer the human-readable LLM response when present; show JSON otherwise.
     const humanText = reply?.choices?.[0]?.message?.content
@@ -106,15 +97,28 @@
       ?? (typeof reply?.output === "string" ? reply.output : null);
     const text = typeof reply === "string" ? reply
       : humanText != null ? humanText
-      : JSON.stringify(reply, null, 2);
+        : JSON.stringify(reply, null, 2);
     return String(text ?? "(empty response)").slice(0, 5000);
   }
+
+  // Only scan the main body of the article: prefer <article>/<main> containers
+  // over the whole page so chrome like site headers doesn't get analyzed.
+  function scanRoot() {
+    return document.querySelector("article, main, [role='main']") || document.body;
+  }
+
+  // Boilerplate that lives inside article containers (datelines, bylines…).
+  const BOILERPLATE_SELECTOR =
+    "nav, header, footer, aside, form, time, .meta, [class*='meta'], " +
+    "[class*='byline'], [class*='timestamp'], [class*='share'], " +
+    "[class*='expected'], [data-rf-ignore]";
 
   function eligible(node) {
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
     if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-highlight, .signalwarning-highlight")) return false;
+    if (parent.closest(BOILERPLATE_SELECTOR)) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
     return Boolean(parent.offsetParent || parent.getClientRects().length);
@@ -178,22 +182,36 @@
     updateUI();
 
     try {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const walker = document.createTreeWalker(scanRoot(), NodeFilter.SHOW_TEXT);
       const nodes = [];
       while (walker.nextNode() && nodes.length < MAX_TEXT_NODES_PER_SCAN) {
         if (eligible(walker.currentNode)) nodes.push(walker.currentNode);
       }
 
       for (const node of nodes) {
-        if (!enabled) break;
         const input = node.nodeValue;
+
+        // Show the request before waiting for the response.
+        latestExchange = {
+          query: input,
+          reply: "Waiting for backend response..."
+        };
+        updateUI();
+
+        console.log("RedFlag sending:", input);
+
         const serverReply = await analyze(input);
+
+        console.log("RedFlag received:", serverReply);
+
+        if (!enabled) break;
         if (!enabled) break;
         const received = extractFindings(serverReply);
         // Show an actual request and response, preferring one with a finding.
-        if (!latestExchange || received.length) {
-          latestExchange = { query: input, reply: displayResponse(serverReply) };
-        }
+        latestExchange = {
+          query: input,
+          reply: displayResponse(serverReply)
+        };
         if (received.length) {
           showFinding(node, received[0]);
           // Any extra results are still shown in the panel.
@@ -265,24 +283,21 @@
 
     panel.querySelector(".rf-list").innerHTML = findings.length
       ? findings.map((item, index) => {
-          const itemClass = item.flagtype === "biasstar" ? "bs" : item.flagtype === "signal" ? "sw" : "rf";
-          return `<article class="${itemClass}-item" data-index="${index}">
-            <div class="${itemClass}-item-title">${escapeHTML(item.label)}</div>
-            <div class="rf-result"> ${escapeHTML(
-              item.result === "true" ? "True" :
-              item.result === "false" ? "False" :
-              "Unable to verify"
-            )}</div>
-            <div class="rf-claim">"${escapeHTML(item.claim)}"</div>
-            <div class="rf-reason">${escapeHTML(item.reason)}</div>
-          </article>`;
-        }).join("")
+        const itemClass = item.flagtype === "biasstar" ? "bs" : item.flagtype === "signal" ? "sw" : "rf";
+        const sources = Array.isArray(item.sources) && item.sources.length
+          ? `<div class="rf-sources">${item.sources
+            .filter(s => s && typeof s.url === "string" && /^https?:\/\//i.test(s.url))
+            .map(s => `<a href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(s.name || "Source")}</a>`)
+            .join("<span aria-hidden=\"true\"> · </span>")}</div>`
+          : "";
+        return `<article class="${itemClass}-item" data-index="${index}"><div class="${itemClass}-item-title">${escapeHTML(item.label)}</div><div class="rf-claim">“${escapeHTML(item.claim)}”</div><div class="rf-reason">${escapeHTML(item.reason)}</div>${sources}</article>`;
+      }).join("")
       : `<div class="rf-empty">Results returned by the analysis service appear here.</div>`;
 
     panel.querySelector(".rf-query").textContent = latestExchange?.query ?? "No request yet.";
     panel.querySelector(".rf-response").textContent = latestExchange?.reply ?? "No response yet.";
     panel.querySelector(".rf-scan-status").textContent = scanStatus;
-    chrome.runtime.sendMessage({ type: "REDFLAG_BADGE", count: findings.length }).catch(() => {});
+    chrome.runtime.sendMessage({ type: "REDFLAG_BADGE", count: findings.length }).catch(() => { });
   }
 
   function escapeHTML(value) {
