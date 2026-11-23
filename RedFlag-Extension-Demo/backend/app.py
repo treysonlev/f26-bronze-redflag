@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from dotenv import load_dotenv
 import requests
 
-from db import get_connection, init_db
+from db import get_connection, init_db, insert_data
 import llm
 load_dotenv()
 app = Flask(__name__)
@@ -490,6 +490,36 @@ def analyze() -> Union[Response, Tuple[Response, int]]:
     # 1) BiasStar: hardcoded regex, always runs, no LLM needed.
     findings = _biasstar_findings(text)
 
+    # 2) The LLM screens the whole passage and returns findings.
+    try:
+        llm_findings = llm.analyze_text(text)
+        findings.extend(llm_findings)
+    except Exception as error:
+        print("LLM analysis failed:", error)
+        if findings:
+            # Regex BiasStar still has something to report without LLM
+            return _analyze_response(_sort_findings(findings))
+        return jsonify({"error": f"LLM analysis failed: {error}"}), 502
+
+    # 3) Store each LLM finding in the database (hopefully).
+    for finding in llm_findings:
+        try:
+            insert_data(finding)
+        except Exception as error:
+            print("Database insertion failed:", error)
+
+    # Dedupe by claim (LLM may also report a BiasStar phrase) and order.
+    unique = []
+    seen = set()
+    for finding in findings:
+        key = finding["claim"].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(finding)
+    return _analyze_response(_sort_findings(unique))
+
+"""
+Kept for reference and fallbacks
     # 2) Cache: this exact text was already screened by the LLM, reuse it.
     try:
         cached = _cache_lookup(text)
@@ -523,16 +553,9 @@ def analyze() -> Union[Response, Tuple[Response, int]]:
                     _persist_finding(text, {"claim": "", "label": "", "reason": "", "flagtype": ""})
         except Exception as error:
             print("Database write failed:", error)
+"""
 
-    # Dedupe by claim (LLM may also report a BiasStar phrase) and order.
-    unique = []
-    seen = set()
-    for finding in findings:
-        key = finding["claim"].lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(finding)
-    return _analyze_response(_sort_findings(unique))
+   
 
 # Standalone endpoint that makes a real call to ODU's LLM.
 # Run curl -X POST http://127.0.0.1:5000/llm_test -H "Content-Type: application/json" -d '{"prompt":"Say hi"}'

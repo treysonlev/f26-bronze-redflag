@@ -46,11 +46,96 @@ def init_db():
         conn.close()
 
 
-def insert_data(): 
+def insert_data(finding, keywords=None): 
     """
     Define methods to insert data into the database
     """
-    return
+
+    if not isinstance(finding, dict):
+        raise TypeError("finding must be a dictionary")
+
+    claim_text = finding.get("claim", "").strip()
+
+    if not claim_text:
+        raise ValueError("Finding must contain a non-empty claim")
+
+    if len(claim_text) > 255:
+        raise ValueError("Claim exceeeds the database's 255-character limit")
+
+    label = finding.get("label", "Needs verification")[:120]
+    reason = finding.get("reason", "No explanation provided.")[:600]
+    flagtype = finding.get("flagtype", "redflag")
+    result = finding.get("result", "unable_to_verify")
+
+    allowed_flagtypes = {"redflag", "biasstar", "signal"}
+    allowed_results = {"true", "false", "unable_to_verify"}
+
+    if flagtype not in allowed_flagtypes:
+        raise ValueError(f"Invalid flagtype: {flagtype}")
+
+    if result not in allowed_results:
+        raise ValueError(f"Invalid result: {result}")
+
+    keywords = keywords or []
+
+    conn = get_connection()
+
+    try:
+        with conn:
+            with conn.cursor() as cur:
+
+                # 1) Insert the claim.
+                cur.execute(
+                    """
+                    INSERT INTO claim (claim, verdict_id)
+                    VALUES (%s, NULL)
+                    RETURNING claim_id
+                    """,
+                    (claim_text,)
+                )
+
+                claim_id = cur.fetchone()[0]
+
+                # 2) Insert the finding associated with the claim.
+                cur.execute(
+                    """
+                    INSERT INTO finding
+                        (claim_id, matched_text, label, reason, flagtype, result)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING finding_id
+                    """,
+                    (
+                        claim_id,
+                        claim_text,
+                        label,
+                        reason,
+                        flagtype,
+                        result
+                    )
+                )
+
+                finding_id = cur.fetchone()[0]
+
+                # 3) Insert any keywords.
+                for keyword in keywords:
+                    keyword = str(keyword).strip()
+
+                    if keyword:
+                        cur.execute(
+                            """
+                            INSERT INTO keyword (claim_id, keyword)
+                            VALUES (%s, %s)
+                            """,
+                            (claim_id, keyword[:50])
+                        )
+        return {
+            "claim_id": claim_id,
+            "finding_id": finding_id
+        }
+
+    finally:
+        conn.close()
+
 
 
 
