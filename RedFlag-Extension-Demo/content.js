@@ -8,8 +8,6 @@
   const MAX_TEXT_NODES_PER_SCAN = 50; // Bound LLM requests on large websites.
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SELECT", "OPTION", "CODE", "PRE"]);
   const HIGHLIGHT_CLASSES = ".redflag-highlight, .biasstar-highlight, .signalwarning-highlight";
-  const UI_SELECTOR = "#redflag-panel, #redflag-launcher, #redflag-trust";
-  const CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"];
 
   let enabled = true;
   let findings = [];
@@ -18,9 +16,6 @@
   let observer;
   let scanStatus = "Not scanned yet.";
   let latestExchange = null;
-  let trustScore = null;
-  let scanVersion = 0;
-  let restartScan = false;
   const responseCache = new Map();
 
   async function analyze(text) {
@@ -72,9 +67,9 @@
           : Array.isArray(data?.results) ? data.results
             : Array.isArray(data?.claims) ? data.claims
               : data && (data.flagged === true || data.is_misinformation === true) ? [data]
-                : data?.flagged === false || data?.is_misinformation === false ? [] : null;
+                : [];
 
-    return items?.filter(item => item && typeof item === "object" && item.flagged !== false)
+    return items.filter(item => item && typeof item === "object" && item.flagged !== false)
       .map(item => ({
         claim: String(item.matched_text ?? item.claim ?? item.phrase ?? item.quote ?? ""),
         pattern: typeof item.pattern === "string" ? item.pattern : "",
@@ -122,7 +117,7 @@
     const parent = node.parentElement;
     if (!parent || !node.nodeValue?.trim()) return false;
     if (SKIP_TAGS.has(parent.tagName)) return false;
-    if (parent.closest(`${UI_SELECTOR}, ${HIGHLIGHT_CLASSES}`)) return false;
+    if (parent.closest("#redflag-panel, #redflag-launcher, .redflag-highlight, .biasstar-highlight, .signalwarning-highlight")) return false;
     if (parent.closest(BOILERPLATE_SELECTOR)) return false;
     if (parent.isContentEditable || parent.closest("[contenteditable='true']")) return false;
     if (node.nodeValue.trim().length < 12 || node.nodeValue.length > 1000) return false;
@@ -180,10 +175,6 @@
   async function scanPage() {
     if (!enabled || !document.body || scanning) return findings.length;
     scanning = true;
-    const version = scanVersion;
-    let checked = 0;
-    let flagged = 0;
-    trustScore = null;
     observer?.disconnect();
     clearHighlights();
     scanStatus = "Sending page text for analysis…";
@@ -213,18 +204,15 @@
 
         console.log("RedFlag received:", serverReply);
 
-        if (version !== scanVersion) return findings.length;
+        if (!enabled) break;
+        if (!enabled) break;
         const received = extractFindings(serverReply);
-        if (received) {
-          checked++;
-          if (received.some(finding => finding.flagtype === "redflag")) flagged++;
-        }
         // Show an actual request and response, preferring one with a finding.
         latestExchange = {
           query: input,
           reply: displayResponse(serverReply)
         };
-        if (received?.length) {
+        if (received.length) {
           showFinding(node, received[0]);
           // Any extra results are still shown in the panel.
           for (const extra of received.slice(1)) {
@@ -233,108 +221,19 @@
         }
         updateUI();
       }
-      if (checked) trustScore = { checked, flagged };
       scanStatus = `Analysis complete (${nodes.length} text passages checked).`;
     } catch (error) {
-      if (version === scanVersion) {
-        scanStatus = `Analysis failed: ${error.message}`;
-        console.error("RedFlag analysis request failed:", error);
-      }
+      scanStatus = `Analysis failed: ${error.message}`;
+      console.error("RedFlag analysis request failed:", error);
     } finally {
       scanning = false;
       if (enabled) observer?.observe(document.documentElement, { childList: true, subtree: true });
       updateUI();
-      if (restartScan) {
-        restartScan = false;
-        if (enabled) scanPage();
-      }
     }
     return findings.length;
   }
 
-  function makeTrustBadge(savedCorner) {
-    const badge = document.createElement("button");
-    badge.id = "redflag-trust";
-    badge.type = "button";
-    badge.dataset.corner = CORNERS.includes(savedCorner) ? savedCorner : "top-right";
-    let drag;
-    let moved = false;
-
-    function setCorner(corner) {
-      badge.dataset.corner = corner;
-      chrome.storage.local.set({ trustCorner: corner }).catch(() => {});
-    }
-
-    badge.addEventListener("pointerdown", event => {
-      if (!event.isPrimary || event.button !== 0) return;
-      const { left, top } = badge.getBoundingClientRect();
-      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left, top };
-      moved = false;
-      badge.setPointerCapture(event.pointerId);
-    });
-    badge.addEventListener("pointermove", event => {
-      if (event.pointerId !== drag?.id) return;
-      const dx = event.clientX - drag.x;
-      const dy = event.clientY - drag.y;
-      if (!moved && Math.hypot(dx, dy) < 5) return;
-      moved = true;
-      badge.style.right = badge.style.bottom = "auto";
-      badge.style.left = `${Math.max(0, Math.min(innerWidth - badge.offsetWidth, drag.left + dx))}px`;
-      badge.style.top = `${Math.max(0, Math.min(innerHeight - badge.offsetHeight, drag.top + dy))}px`;
-    });
-    badge.addEventListener("pointerup", event => {
-      if (event.pointerId !== drag?.id || !moved) return;
-      const { left, top, width, height } = badge.getBoundingClientRect();
-      const vertical = top + height / 2 < innerHeight / 2 ? "top" : "bottom";
-      const horizontal = left + width / 2 < innerWidth / 2 ? "left" : "right";
-      setCorner(`${vertical}-${horizontal}`);
-    });
-    badge.addEventListener("lostpointercapture", event => {
-      if (event.pointerId !== drag?.id) return;
-      drag = null;
-      badge.style.left = badge.style.top = badge.style.right = badge.style.bottom = "";
-    });
-    badge.addEventListener("click", event => {
-      if (!moved || event.detail === 0) openPanel();
-    });
-    badge.addEventListener("keydown", event => {
-      let [vertical, horizontal] = badge.dataset.corner.split("-");
-      switch (event.key) {
-        case "ArrowUp": vertical = "top"; break;
-        case "ArrowDown": vertical = "bottom"; break;
-        case "ArrowLeft": horizontal = "left"; break;
-        case "ArrowRight": horizontal = "right"; break;
-        default: return;
-      }
-      event.preventDefault();
-      setCorner(`${vertical}-${horizontal}`);
-    });
-    return badge;
-  }
-
-  function updateTrustBadge() {
-    const badge = document.getElementById("redflag-trust");
-    badge.hidden = !enabled;
-    let grade = "–";
-    let description = scanning && enabled ? "Scan in progress" : "Trust grade unavailable";
-    let tone = "neutral";
-    if (trustScore) {
-      const { checked, flagged } = trustScore;
-      const flaggedShare = flagged / checked;
-      grade = flaggedShare <= 0.1 ? "A" : flaggedShare < 0.2 ? "B"
-        : flaggedShare < 0.3 ? "C" : flaggedShare < 0.5 ? "D" : "F";
-      tone = grade === "A" ? "low" : grade === "B" ? "medium" : "high";
-      description = `Trust grade ${grade}. ${flagged} of ${checked} scanned passages flagged as potential misinformation`;
-    }
-    const label = `RedFlag. ${description}. Open scan results. Drag or use arrow keys to move.`;
-    const display = `Trust ${grade}`;
-    if (badge.textContent !== display) badge.textContent = display;
-    badge.dataset.tone = tone;
-    badge.title = label;
-    badge.setAttribute("aria-label", label);
-  }
-
-  function makeUI(savedCorner) {
+  function makeUI() {
     if (document.getElementById("redflag-launcher")) return;
     const launcher = document.createElement("button");
     launcher.id = "redflag-launcher";
@@ -358,7 +257,7 @@
       <div class="rf-list"></div>
       <div class="rf-disclaimer">Demo screening only. A flag means “verify this claim,” not an automatic final verdict.</div>`;
     panel.querySelector(".rf-close").addEventListener("click", () => panel.classList.remove("rf-open"));
-    document.documentElement.append(panel, launcher, makeTrustBadge(savedCorner));
+    document.documentElement.append(panel, launcher);
     updateUI();
   }
 
@@ -375,7 +274,6 @@
     const launcher = document.getElementById("redflag-launcher");
     const panel = document.getElementById("redflag-panel");
     if (!launcher || !panel) return;
-    updateTrustBadge();
     launcher.style.display = enabled ? "flex" : "none";
     if (!enabled) panel.classList.remove("rf-open");
     launcher.querySelector(".rf-count").textContent = String(findings.length);
@@ -420,15 +318,8 @@
     }
     if (message.type === "REDFLAG_SET_ENABLED") {
       enabled = Boolean(message.enabled);
-      if (enabled) {
-        if (scanning) restartScan = true;
-        else scanPage();
-      } else {
-        scanVersion++;
-        trustScore = null;
-        scanStatus = "Protection is off.";
-        clearHighlights();
-      }
+      if (enabled) scanPage();
+      else { clearHighlights(); scanStatus = "Protection is off."; updateUI(); }
       sendResponse({ enabled, count: findings.length });
       return false;
     }
@@ -438,15 +329,15 @@
     }
   });
 
-  chrome.storage.local.get({ enabled: true, autoScan: true, trustCorner: "top-right" }).then(settings => {
+  chrome.storage.local.get({ enabled: true, autoScan: true }).then(settings => {
     enabled = settings.enabled;
-    makeUI(settings.trustCorner);
+    makeUI();
     if (enabled && settings.autoScan) scanPage();
   });
 
   observer = new MutationObserver(mutations => {
     if (!scanning && mutations.some(m =>
-      !m.target.closest?.(UI_SELECTOR))) scheduleScan();
+      !m.target.parentElement?.closest?.("#redflag-panel, #redflag-launcher"))) scheduleScan();
   });
   if (document.documentElement)
     observer.observe(document.documentElement, { childList: true, subtree: true });
