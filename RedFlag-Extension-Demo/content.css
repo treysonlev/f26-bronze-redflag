@@ -51,6 +51,36 @@
   vertical-align: super;
 }
 
+#redflag-trust {
+  all: initial;
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 2147483646;
+  display: block;
+  padding: 9px 11px;
+  border: 1px solid #d4d4d4;
+  border-radius: 999px;
+  background: #fff;
+  color: #404040;
+  box-shadow: 0 2px 8px #0002;
+  font: 700 12px/1 system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+#redflag-trust[hidden] { display: none; }
+#redflag-trust:active { cursor: grabbing; }
+#redflag-trust:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+#redflag-trust[data-corner$="-left"] { left: 14px; right: auto; }
+#redflag-trust[data-corner^="bottom-"] { bottom: 14px; top: auto; }
+#redflag-trust[data-corner="bottom-right"] { bottom: 84px; }
+#redflag-trust[data-tone="low"] { background: #f0fdf4; color: #166534; border-color: #86efac; }
+#redflag-trust[data-tone="medium"] { background: #fffbeb; color: #854d0e; border-color: #fcd34d; }
+#redflag-trust[data-tone="high"] { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+
 #redflag-launcher {
   all: initial;
   align-items: center;
