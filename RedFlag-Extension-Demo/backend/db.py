@@ -48,7 +48,10 @@ def init_db():
 
 def insert_data(finding, keywords=None): 
     """
-    Define methods to insert data into the database
+    Insert an LLM finding and its associated claim into the database.
+
+    Creates a new record in the claim table, then associates a finding
+    record containing its label, reason, flag type, result, and optionally keyword(s).
     """
 
     if not isinstance(finding, dict):
